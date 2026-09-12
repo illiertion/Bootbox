@@ -1,0 +1,84 @@
+name: Build Bootbox IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -project Bootbox.xcodeproj \
+            -scheme Bootbox \
+            -resolvePackageDependencies
+
+      - name: Archive Bootbox
+        run: |
+          rm -rf build
+          mkdir -p build
+
+          xcodebuild archive \
+            -project Bootbox.xcodeproj \
+            -scheme Bootbox \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$PWD/build/Bootbox.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Create unsigned IPA
+        run: |
+          rm -rf build/IPA
+          mkdir -p build/IPA/Payload
+
+          APP_PATH=$(find \
+            "build/Bootbox.xcarchive/Products/Applications" \
+            -maxdepth 1 \
+            -name "*.app" \
+            -type d \
+            | head -n 1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: Bootbox.app was not found."
+            exit 1
+          fi
+
+          echo "Found app:"
+          echo "$APP_PATH"
+
+          cp -R "$APP_PATH" build/IPA/Payload/
+
+          cd build/IPA
+          zip -r ../Bootbox-unsigned.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bootbox-unsigned-IPA
+          path: build/Bootbox-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Xcode archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bootbox-xcarchive
+          path: build/Bootbox.xcarchive
+          if-no-files-found: error
+          retention-days: 3
